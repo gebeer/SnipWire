@@ -1,4 +1,5 @@
 <?php
+
 namespace ProcessWire;
 
 /**
@@ -12,35 +13,37 @@ namespace ProcessWire;
  * https://processwire.com
  *
  */
- 
+
 wire('classLoader')->addNamespace('SnipWire\Helpers', dirname(__DIR__) . '/helpers');
 
 use SnipWire\Helpers\CurrencyFormat;
 
-class MarkupSnipWire extends WireData implements Module {
-    
-    public static function getModuleInfo() {
+class MarkupSnipWire extends WireData implements Module
+{
+
+    public static function getModuleInfo()
+    {
         return array(
             'title' => __('SnipWire Markup'), // Module Title
             'summary' => __('Snipcart markup output for SnipWire.'), // Module Summary
             'version' => '0.8.7',
             'author'  => 'Martin Gartner',
-            'icon' => 'shopping-cart', 
-            'singular' => true, 
-            'autoload' => true, 
+            'icon' => 'shopping-cart',
+            'singular' => true,
+            'autoload' => true,
             'requires' => array(
                 'ProcessWire>=3.0.148',
                 'SnipWire',
                 'PHP>=7.0.0',
-             )
+            )
         );
     }
 
     const snicpartAnchorTypeButton = 1;
     const snicpartAnchorTypeLink = 2;
 
-    /** @var array $snipwireConfig The module config of SnipWire module */
-    protected $snipwireConfig = array();
+    /** @var SnipWire $snipwireConfig The module config of SnipWire module */
+    protected $snipwireConfig;
 
     /** @var string $currency The currency to be used in cart and catalogue ('eur' or 'usd' or 'cad' ...) */
     private $currency = '';
@@ -72,18 +75,20 @@ class MarkupSnipWire extends WireData implements Module {
      * Initalize module config variables (properties)
      *
      */
-    public function __construct() {
+    public function __construct()
+    {
         parent::__construct();
     }
-    
+
     /**
      * Module init method
      *
      */
-    public function init() {
+    public function init()
+    {
         /** @var MarkupSnipWire $snipwire Custom ProcessWire API variable */
         $this->wire('snipwire', $this);
-        
+
         // Get SnipWire module config.
         // (Holds merged data from DB and default config. 
         // This works because of using the ModuleConfig class)
@@ -94,7 +99,7 @@ class MarkupSnipWire extends WireData implements Module {
 
         // Get the "Custom Cart Fields" page (the corresponding template only allows one single page)
         $this->customCartFieldsPage = $this->wire('pages')->findOne('name=custom-cart-fields, template=snipcart-cart, include=all');
-        
+
         // Get the "snipcart_cart_custom_fields" field content
         if ($this->customCartFieldsPage->hasField('snipcart_cart_custom_fields')) {
             $this->cartCustomFields = $this->customCartFieldsPage->snipcart_cart_custom_fields;
@@ -105,7 +110,8 @@ class MarkupSnipWire extends WireData implements Module {
      * Module ready method
      *
      */
-    public function ready() {
+    public function ready()
+    {
         // Add a hook after page is rendered and add Snipcart CSS/JS
         $this->addHookAfter('Page::render', $this, 'renderCSSJS');
     }
@@ -114,7 +120,8 @@ class MarkupSnipWire extends WireData implements Module {
      * Set cart and catalogue currency (ISO 4217 currency code) using $input, $session or module config.
      *
      */
-    private function _initCurrency() {
+    private function _initCurrency()
+    {
         $input = $this->wire('input');
         $session = $this->wire('session');
         $sanitizer = $this->wire('sanitizer');
@@ -127,9 +134,9 @@ class MarkupSnipWire extends WireData implements Module {
 
         // GET, POST, session
         $currency = $input->$currencyParam ?? $session->get($currencyParam);
-        if($currency) {
-        $currency = strtolower($currency);
-        $currency = $sanitizer->option($currency, $currencies);
+        if ($currency) {
+            $currency = strtolower($currency);
+            $currency = $sanitizer->option($currency, $currencies);
         } else {
             $currency = reset($currencies);
         }
@@ -138,16 +145,17 @@ class MarkupSnipWire extends WireData implements Module {
         if (!$currency) $currency = reset($currencies);
         $this->currency = $currency;
     }
-    
+
     /**
      * Getter for current cart and catalogue currency.
      *
      * @return string $currency The ISO 4217 currency code
      *
      */
-    public function getCurrency() {
+    public function getCurrency()
+    {
         return $this->currency;
-    }    
+    }
 
     /**
      * Getter for snipcartAPIproperties
@@ -155,8 +163,21 @@ class MarkupSnipWire extends WireData implements Module {
      * @return array
      *
      */
-    public function getSnipcartAPIproperties() {
+    public function getSnipcartAPIproperties()
+    {
         return $this->snipcartAPIproperties;
+    }
+
+    /**
+     * Getter for Snipcart API Key
+     * returns key based on set live/test environment
+     *
+     * @return string
+     *
+     */
+    public function getSnipcartAPIkey()
+    {
+        return ($this->snipwireConfig->snipcart_environment == 1) ? $this->snipwireConfig->api_key : $this->snipwireConfig->api_key_test;
     }
 
     /**
@@ -164,29 +185,29 @@ class MarkupSnipWire extends WireData implements Module {
      * (Method triggered after every page render)
      *
      */
-    public function renderCSSJS(HookEvent $event) {
+    public function renderCSSJS(HookEvent $event)
+    {
         $modules = $this->wire('modules');
 
         $snipwireConfig = $this->snipwireConfig;
 
         /** @var Page $page */
         $page = $event->object;
-                
+
         // Prevent adding to pages with system templates assigned
         if ($page->template->flags & Template::flagSystem) return;
-        
+
         // Prevent rendering if module config was never saved
         if (!$snipwireConfig->submit_save_module) return;
 
         // Prevent adding to pages with excluded templates assigned
         if (in_array($page->template->name, $snipwireConfig->excluded_templates)) return;
-        
+
         // Snipcart environment (TEST | LIVE?)
+        $snipcartAPIKey = $this->getSnipcartAPIkey();
         if ($snipwireConfig->snipcart_environment == 1) {
-            $snipcartAPIKey = $snipwireConfig->api_key;
             $environmentStatus = '<!-- Snipcart LIVE mode -->';
         } else {
-            $snipcartAPIKey = $snipwireConfig->api_key_test;
             $environmentStatus = '<!-- Snipcart TEST mode -->';
         }
 
@@ -203,16 +224,16 @@ class MarkupSnipWire extends WireData implements Module {
             $out .= '>';
             $cssResources[] = $out;
         }
-        
+
         // Add jQuery JS resource
         if ($snipwireConfig->include_jquery) {
             $out  = '<script';
             $out .= ' src="' . $snipwireConfig->jquery_js_path . '"';
-            $out .= (!empty($snipwireConfig->jquery_js_integrity) ? ' integrity="' . $snipwireConfig->jquery_js_integrity . '"' : '');
+            $out .= (!empty($snipwireConfig->jquery_js_integrity) ? ' integrity="' . $snipwireConfig->jquery_js_integrity . '" crossorigin="anonymous"' : '');
             $out .= '></script>';
             $jsResources[] = $out;
         }
-        
+
         // Add Snipcart JS resource + custom cart fields (if any)
         $jsResources[] = $environmentStatus;
         $out  = '<script';
@@ -252,7 +273,7 @@ class MarkupSnipWire extends WireData implements Module {
         $out .= '});' . PHP_EOL;
         $out .= '</script>';
         $jsResources[] = $out;
-        
+
         // Output CSSJS
         reset($cssResources);
         foreach ($cssResources as $cssResource) {
@@ -338,7 +359,8 @@ class MarkupSnipWire extends WireData implements Module {
      * - data-item-shippable: boolean Setting this to false, the product will be flagged as an item that can not be shipped.
      *
      */
-    public function anchor(Page $product, $options = array()) {
+    public function anchor(Page $product, $options = array())
+    {
         // Return early if $product (Page) is not a Snipcart product
         if (!$this->isProductTemplate($product->template)) return '';
 
@@ -354,11 +376,11 @@ class MarkupSnipWire extends WireData implements Module {
 
         $modules = $this->wire('modules');
         $sanitizer = $this->wire('sanitizer');
-        
+
         if ($options['type'] == self::snicpartAnchorTypeLink) {
             $open = '<a href="#"';
             $close = '</a>';
-        } else { 
+        } else {
             $open = '<button';
             $close = '</button>';
         }
@@ -367,7 +389,7 @@ class MarkupSnipWire extends WireData implements Module {
         $out .= isset($options['id']) ? ' id="' . $options['id'] . '"' : '';
         $out .= isset($options['class']) ? ' class="' . $options['class'] . '"' : '';
         if (isset($options['attr']) && is_array($options['attr'])) {
-            foreach($options['attr'] as $attr => $value) {
+            foreach ($options['attr'] as $attr => $value) {
                 $out .= ' ' . $attr . '="' . $value . '"';
             }
         }
@@ -377,11 +399,13 @@ class MarkupSnipWire extends WireData implements Module {
 
         $out .= ' data-item-name="' . $this->getProductName($product) . '"';
         $out .= ' data-item-id="' . $product->snipcart_item_id . '"';
-        $out .= " data-item-price='" . $this->getProductPrice($product) . "'";
+        $out .= ' data-item-price="' . htmlspecialchars($this->getProductPrice($product), ENT_QUOTES, 'UTF-8') . '"';
         $out .= ' data-item-url="' . $this->getProductUrl($product) . '"';
 
-        if ($product->snipcart_item_description) {
-            $out .= ' data-item-description="' . $product->snipcart_item_description . '"';
+        if ($product->snipcart_item_short_description) {
+            // restrict max length of description to avoid paypal error: https://support.snipcart.com/t/fixed-preparing-paypal-payment-fails-with-error-a-problem-occured-when-performing-an-operation-in-paypal/476
+            $description = $this->wire->sanitizer->truncate($product->snipcart_item_short_description, 100);
+            $out .= ' data-item-description="' . $description . '"';
         }
 
         if ($productThumb = $this->getProductThumb($product)) {
@@ -424,7 +448,7 @@ class MarkupSnipWire extends WireData implements Module {
 
         $defaultQuantity = $product->snipcart_item_quantity ? $product->snipcart_item_quantity : 1;
         $out .= ' data-item-quantity="' . $defaultQuantity . '"';
-        
+
         if ($product->snipcart_item_max_quantity) {
             $out .= ' data-item-max-quantity="' . $product->snipcart_item_max_quantity . '"';
         }
@@ -460,24 +484,24 @@ class MarkupSnipWire extends WireData implements Module {
         if ($snipwireConfig->taxes_included) {
             $out .= ' data-item-has-taxes-included="true"';
         }
-        
+
         if ($product->snipcart_item_payment_interval) {
             $out .= ' data-item-payment-interval="' . $product->snipcart_item_payment_interval->value . '"';
         }
-        
+
         if ($product->snipcart_item_payment_interval_count) {
             $out .= ' data-item-payment-interval-count="' . $product->snipcart_item_payment_interval_count . '"';
         }
-        
+
         if ($product->snipcart_item_payment_trial) {
             $out .= ' data-item-payment-trial="' . $product->snipcart_item_payment_trial . '"';
         }
-        
+
         if ($product->hasField('snipcart_item_recurring_shipping')) {
             $recurringShipping = $product->snipcart_item_recurring_shipping ? 'true' : 'false';
             $out .= ' data-item-recurring-shipping="' . $recurringShipping . '"';
         }
-        
+
         if ($product->hasField('snipcart_item_shippable')) {
             $shippable = $product->snipcart_item_shippable ? 'true' : 'false';
         } else {
@@ -490,7 +514,7 @@ class MarkupSnipWire extends WireData implements Module {
         } else {
             $downloadable = 'false';
         }
-        if($downloadable && $guid = $product->snipcart_item_file_guid) {
+        if ($downloadable && $guid = $product->snipcart_item_file_guid) {
             $out .= ' data-item-file-guid="' . $guid . '"';
         }
 
@@ -518,10 +542,11 @@ class MarkupSnipWire extends WireData implements Module {
      * @return string $productName The product name
      *
      */
-    public function getProductName(Page $product) {
+    public function getProductName(Page $product)
+    {
         // Check if $product (Page) is a Snipcart product
         if (!$this->isProductTemplate($product->template)) return '';
-        
+
         $snipwireConfig = $this->snipwireConfig;
         if (!$product->hasField($snipwireConfig->data_item_name_field) || empty($product->{$snipwireConfig->data_item_name_field})) {
             $productName = $product->title;
@@ -539,17 +564,35 @@ class MarkupSnipWire extends WireData implements Module {
      * @return string $productUrl The product page url
      *
      */
-    public function getProductUrl(Page $product) {
+    public function getProductUrl(Page $product)
+    {
         // Check if $product (Page) is a Snipcart product
         if (!$this->isProductTemplate($product->template)) return '';
 
         $snipwireConfig = $this->snipwireConfig;
         if ($snipwireConfig->single_page_shop) {
             $productUrl = $this->wire('pages')->get($snipwireConfig->single_page_shop_page)->httpUrl;
+        } elseif ($this->isVariationTemplate($product)) {
+            // build url from product that this is a variation of and variation page id
+            $prod = $product->getForPage(); // gets the product page that variation lives on
+            if ($prod && $prod->id) {
+                $productUrl = $prod->httpUrl . '?variation=' . $product;
+            }
         } else {
             $productUrl = $product->httpUrl;
         }
         return $productUrl;
+    }
+
+    /**
+     * looks at the template of the product and checks if the product is a variation of a product
+     * product is a variation if it passes the isProductTemplate() and template name is not "snipcart-product"
+     * @param SnipcartProductPage|RepeaterPage $product
+     */
+    public function isVariationTemplate($product)
+    {
+        if ($this->isProductTemplate($product->template) && $product->template != 'snipcart-product') return true;
+        return false;
     }
 
     /**
@@ -565,11 +608,11 @@ class MarkupSnipWire extends WireData implements Module {
      * @return string $productPrice The product price (unformatted or formatted)
      *
      */
-    public function getProductPrice(Page $product, $currencySelected = '', $formatted = false) {
-        if (!$this->isProductTemplate($product->template)) return '';
-        
+    public function getProductPrice(Page $product, $currencySelected = '', $formatted = false)
+    {
+        if (!$this->isProductTemplate($product->template) && !$this->isProductTemplate($product->getForPage()->template)) return '';
         $currencies = $this->snipwireConfig->currencies;
-        if (!is_array($currencies)) return ''; 
+        if (!is_array($currencies)) return '';
 
         // Collect all price fields values
         $prices = array();
@@ -577,7 +620,7 @@ class MarkupSnipWire extends WireData implements Module {
             // Snipcart always needs a . as separator - so we may not typecasting (float) as it
             // would be locale aware so it could lead to , as decimal separator
             if ($price = $product->get("snipcart_item_price_$currency")) {
-                $prices[$currency] = $price;
+                $prices[$currency] = number_format($price, 2);
             }
         }
 
@@ -585,9 +628,10 @@ class MarkupSnipWire extends WireData implements Module {
 
         // If unformatted return as early as possible
         if (!$formatted) return wireEncodeJSON($prices);
+        // if (!$formatted) return number_format($prices['eur'], 2);
 
         // ===== formatted price =====
-        
+
         // sample format:
         // 
         // array(
@@ -599,14 +643,14 @@ class MarkupSnipWire extends WireData implements Module {
         //     'numberFormat' => '%s%v',
         //     'currencySymbol' => '€',
         // )
-        
+
         // Get currency from method param or $snipwire->currency
         if (!$currencySelected) $currencySelected = $this->currency;
+
         $price = $prices[$currencySelected];
-        
         return CurrencyFormat::format($price, $currencySelected);
     }
-    
+
     /**
      * Returns the product price formatted by currency property from SnipWire module config.
      *
@@ -618,7 +662,8 @@ class MarkupSnipWire extends WireData implements Module {
      * @see function getProductPrice
      *
      */
-    public function getProductPriceFormatted(Page $product, $currencySelected = '') {
+    public function getProductPriceFormatted(Page $product, $currencySelected = '')
+    {
         return $this->getProductPrice($product, $currencySelected, true);
     }
 
@@ -630,18 +675,22 @@ class MarkupSnipWire extends WireData implements Module {
      * @return null|Pageimage $productThumb The product thumbnail or null if no image found
      *
      */
-    public function getProductThumb(Page $product) {
+    public function getProductThumb(Page $product)
+    {
         // Check if $product (Page) is a Snipcart product
         if (!$this->isProductTemplate($product->template)) return null;
 
+        // if $product is a product variation, get $product page
+        if ($this->isVariationTemplate($product)) $product = $product->getForPage();
         $snipwireConfig = $this->snipwireConfig;
         $productThumb = null;
-        if ($image = $product->snipcart_item_image->first()) {
-            $productThumb = $image->size($snipwireConfig['cart_image_width'], $snipwireConfig['cart_image_height'], [
-                'cropping' => $snipwireConfig['cart_image_cropping'] ? true : false,
-                'quality' => $snipwireConfig['cart_image_quality'],
-                'hidpi' => $snipwireConfig['cart_image_hidpi'] ? true : false,
-                'hidpiQuality' => $snipwireConfig['cart_image_hidpiQuality'],
+        // bd($product);
+        if ($image = $product->getUnformatted('snipcart_item_image')->first()) {
+            $productThumb = $image->size($snipwireConfig->cart_image_width, $snipwireConfig->cart_image_height, [
+                'cropping' => $snipwireConfig->cart_image_cropping ? true : false,
+                'quality' => $snipwireConfig->cart_image_quality,
+                'hidpi' => $snipwireConfig->cart_image_hidpi ? true : false,
+                'hidpiQuality' => $snipwireConfig->cart_image_hidpiQuality,
             ]);
         }
         return $productThumb;
@@ -656,13 +705,14 @@ class MarkupSnipWire extends WireData implements Module {
      * @return null|array|string The product categories as array, comma seperated string or empty array or empty string if none found
      *
      */
-    public function getProductCategories(Page $product, $array = true) {
+    public function getProductCategories(Page $product, $array = true)
+    {
         // Check if $product (Page) is a Snipcart product
         if (!$this->isProductTemplate($product->template)) return null;
 
         $snipwireConfig = $this->snipwireConfig;
         $categories = array();
-        if ($categoriesFieldName = $snipwireConfig['data_item_categories_field']) {
+        if ($categoriesFieldName = $snipwireConfig->data_item_categories_field) {
             if ($categoriesField = $product->$categoriesFieldName) {
                 $categories = $categoriesField->each('title');
             }
@@ -678,7 +728,8 @@ class MarkupSnipWire extends WireData implements Module {
      * @return null|string The product categories as comma seperated string or empty string if none found
      *
      */
-    public function getProductCategoriesString(Page $product) {
+    public function getProductCategoriesString(Page $product)
+    {
         return $this->getProductCategories($product, false);
     }
 
@@ -689,7 +740,8 @@ class MarkupSnipWire extends WireData implements Module {
      * @return array|WireArray A array of template objects or template names (if $objects = true) [default=true]
      *
      */
-    public function getProductTemplates($objects = true) {
+    public function getProductTemplates($objects = true)
+    {
         $templates = $this->snipwireConfig->product_templates;
         if ($objects) {
             $productTemplates = new WireArray();
@@ -709,14 +761,15 @@ class MarkupSnipWire extends WireData implements Module {
      * @return boolean
      *
      */
-    public function isProductTemplate($template) {
+    public function isProductTemplate($template)
+    {
         if (is_object($template) && ($template instanceof Template)) {
             $templateName = $template->name;
         } elseif (is_string($template)) {
             $templateName = $template;
         } else {
             return false;
-        } 
+        }
         $productTemplates = $this->snipwireConfig->product_templates;
         return (in_array($templateName, $productTemplates)) ? true : false;
     }
@@ -730,9 +783,10 @@ class MarkupSnipWire extends WireData implements Module {
      * @return WireArray $selectedFields
      * 
      */
-    public function getProductTemplateFields($defaultFieldName, $allowedFieldTypes = array(), $excludeFieldNames = array()) {
+    public function getProductTemplateFields($defaultFieldName, $allowedFieldTypes = array(), $excludeFieldNames = array())
+    {
         $selectedFields = new WireArray();
-        
+
         // Collect fields from all product templates and make unique
         $productTemplates = $this->getProductTemplates();
         foreach ($productTemplates as $productTemplate) {
@@ -771,9 +825,10 @@ class MarkupSnipWire extends WireData implements Module {
      * @param array $cards The credit card array
      *
      */
-    public function addCreditCardLabels($cards) {
+    public function addCreditCardLabels($cards)
+    {
         $cardsWithLabels = array();
-        
+
         $creditcardLabels = SnipWireConfig::getCreditCardLabels();
         foreach ($cards as $card) {
             $cardsWithLabels[] = array(
@@ -793,7 +848,8 @@ class MarkupSnipWire extends WireData implements Module {
      * @return array
      *
      */
-    private function _mergeOptions(array $defaults, array $options) {
+    private function _mergeOptions(array $defaults, array $options)
+    {
         $defaultsClass = isset($defaults['class']) ? explode(' ', $defaults['class']) : array();
         $optionsClass = isset($options['class']) ? explode(' ', $options['class']) : array();
         $options['class'] = implode(' ', array_merge($defaultsClass, $optionsClass));
@@ -803,8 +859,7 @@ class MarkupSnipWire extends WireData implements Module {
         $optionsAttr = isset($options['attr']) && is_array($options['attr']) ? $options['attr'] : array();
         $options['attr'] = array_unique(array_merge($defaultsAttr, $optionsAttr));
         unset($defaults['attr']);
-        
+
         return array_merge($defaults, $options);
     }
-
 }

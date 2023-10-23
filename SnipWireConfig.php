@@ -979,6 +979,9 @@ class SnipWireConfig extends ModuleConfig {
             if (!($t->flags & Template::flagSystem) && $t->name != 'snipcart-cart') {
                 $templates->add($t);
             }
+            if(strpos($t->name, 'repeater_') === 0) {
+                $templates->add($t);
+            }
         }
         return $templates;
     }

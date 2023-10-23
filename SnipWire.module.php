@@ -16,6 +16,7 @@ namespace ProcessWire;
 wire('classLoader')->addNamespace('SnipWire\Helpers', __DIR__ . '/helpers');
 wire('classLoader')->addNamespace('SnipWire\Services', __DIR__ . '/services');
 
+use ProcessWire\SnipWire as ProcessWireSnipWire;
 use SnipWire\Helpers\Functions;
 use SnipWire\Helpers\CurrencyFormat;
 use SnipWire\Helpers\Taxes;
@@ -111,10 +112,10 @@ class SnipWire extends WireData implements Module, ConfigurableModule {
         $this->addHookAfter('Pages::saveReady', $this, 'checkSKUUnique');
 
         $this->addHookAfter('Modules::saveConfig', $this, 'manageCurrencyPriceFields');
-        $this->addHookBefore('ProcessPageView::execute', $this, 'checkWebhookRequest');
+        $this->addHook('/webhooks/snipcart/', $this, 'checkWebhookRequest');
 
-        $this->addHookAfter('Pages::saved', $this, 'publishSnipcartProduct');
-        $this->addHookAfter('Pages::unpublished', $this, 'unpublishSnipcartProduct');
+        // $this->addHookAfter('Pages::saved', $this, 'publishSnipcartProduct');
+        // $this->addHookAfter('Pages::unpublished', $this, 'unpublishSnipcartProduct');
         $this->addHookAfter('Pages::trashed', $this, 'unpublishSnipcartProduct');
         
 		$this->addHookBefore('Modules::uninstall', $this, 'convertFieldtypeTaxSelector');
@@ -213,14 +214,15 @@ class SnipWire extends WireData implements Module, ConfigurableModule {
 
     /**
      * Check for webohook request and process them.
-     * (Method triggered before ProcessPageView execute)
+     * (Method triggered from URL hook before ProcessPageView execute)
      *
      */
     public function checkWebhookRequest(HookEvent $event) {
+        $requestUri = $event->arguments(0);
         if ($webhooksEndpoint = $this->get('webhooks_endpoint')) {
-            if ($this->sanitizer->url($this->input->url) == $webhooksEndpoint) {
+            if ($this->sanitizer->url($requestUri) == $webhooksEndpoint) {
                 $this->wire('webhooks')->process();
-                $event->replace = true;
+                $event->return = true;
                 // @note: Tracy Debug won't work from here on as normal page rendering is omitted!
             }
         }
@@ -277,7 +279,7 @@ class SnipWire extends WireData implements Module, ConfigurableModule {
         if (!$snipwire) return;
         
         $page = $event->arguments(0);
-        if ($snipwire->isProductTemplate($page->template)) {
+        if ($snipwire->isProductTemplate($page->template) && $page->template->name == 'snipcart-product') {
             $field = $page->getField('snipcart_item_id');
             $sku = $page->snipcart_item_id; // SKU field value
             if (!$sku) return;

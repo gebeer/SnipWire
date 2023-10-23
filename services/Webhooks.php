@@ -1,4 +1,5 @@
 <?php
+
 namespace SnipWire\Services;
 
 /**
@@ -46,14 +47,16 @@ use SnipWire\Helpers\Taxes;
 use ProcessWire\WireData;
 use ProcessWire\WireException;
 
-class Webhooks extends WireData {
+class Webhooks extends WireData
+{
 
     const snipWireWebhooksLogName = 'snipwire-webhooks';
     const snipcartRequestTokenServerVar = 'HTTP_X_SNIPCART_REQUESTTOKEN';
-    
+
     // Snipcart webhook events
     const webhookOrderCompleted = 'order.completed';
     const webhookOrderStatusChanged = 'order.status.changed';
+    const webhookOrderNotificationCreated = 'order.notification.created';
     const webhookOrderPaymentStatusChanged = 'order.paymentStatus.changed';
     const webhookOrderTrackingNumberChanged = 'order.trackingNumber.changed';
     const webhookSubscriptionCreated = 'subscription.created';
@@ -64,52 +67,57 @@ class Webhooks extends WireData {
     const webhookShippingratesFetch = 'shippingrates.fetch';
     const webhookTaxesCalculate = 'taxes.calculate';
     const webhookCustomerUpdated = 'customauth:customer_updated'; // not documented
-    
+
     const webhookModeLive = 'Live';
     const webhookModeTest = 'Test';
 
-    /** @var array $snipwireConfig The module config of SnipWire module */
-    protected $snipwireConfig = array();
+    /** @var SnipWire $snipwireConfig The module config of SnipWire module */
+    protected $snipwireConfig;
 
     /** @var boolean Turn on/off debug mode for Webhooks class */
     private $debug = false;
-    
+
     /** @var string $serverProtocol The server protocol (e.g. HTTP/1.1) */
     protected $serverProtocol = '';
-    
+
     /** @var array $webhookEventsIndex All available webhook events */
     protected $webhookEventsIndex = array();
-    
+
     /** @var string $event The current Snipcart event */
     protected $event = '';
-    
+
+    /** @var string $rawPayload The current raw POST input */
+    protected $rawPayload = '';
+
     /** @var array $payload The current JSON decoded POST input */
     protected $payload = null;
-    
+
     /** @var integer $responseStatus The response status code for SnipCart */
     private $responseStatus = null;
-    
+
     /** @var string (JSON) $responseBody The JSON formatted response array for Snipcart */
     private $responseBody = '';
-    
+
     /**
      * Set class properties.
      *
      */
-    public function __construct() {        
+    public function __construct()
+    {
         $this->webhookEventsIndex = array(
-            self::webhookOrderCompleted => 'handleOrderCompleted',
-            self::webhookOrderStatusChanged => 'handleOrderStatusChanged',
-            self::webhookOrderPaymentStatusChanged => 'handleOrderPaymentStatusChanged',
-            self::webhookOrderTrackingNumberChanged => 'handleOrderTrackingNumberChanged',
-            self::webhookSubscriptionCreated => 'handleSubscriptionCreated',
-            self::webhookSubscriptionCancelled => 'handleSubscriptionCancelled',
-            self::webhookSubscriptionPaused => 'handleSubscriptionPaused',
-            self::webhookSubscriptionResumed => 'handleSubscriptionResumed',
-            self::webhookSubscriptionInvoiceCreated => 'handleSubscriptionInvoiceCreated',
-            self::webhookShippingratesFetch => 'handleShippingratesFetch',
-            self::webhookTaxesCalculate => 'handleTaxesCalculate',
-            self::webhookCustomerUpdated => 'handleCustomerUpdated',
+            self::webhookOrderCompleted => ['method' => 'handleOrderCompleted', 'active' => false],
+            self::webhookOrderStatusChanged => ['method' => 'handleOrderStatusChanged', 'active' => false],
+            self::webhookOrderNotificationCreated => ['method' => 'handleOrderNotificationCreated', 'active' => false],
+            self::webhookOrderPaymentStatusChanged => ['method' => 'handleOrderPaymentStatusChanged', 'active' => false],
+            self::webhookOrderTrackingNumberChanged => ['method' => 'handleOrderTrackingNumberChanged', 'active' => false],
+            self::webhookSubscriptionCreated => ['method' => 'handleSubscriptionCreated', 'active' => false],
+            self::webhookSubscriptionCancelled => ['method' => 'handleSubscriptionCancelled', 'active' => false],
+            self::webhookSubscriptionPaused => ['method' => 'handleSubscriptionPaused', 'active' => false],
+            self::webhookSubscriptionResumed => ['method' => 'handleSubscriptionResumed', 'active' => false],
+            self::webhookSubscriptionInvoiceCreated => ['method' => 'handleSubscriptionInvoiceCreated', 'active' => false],
+            self::webhookShippingratesFetch => ['method' => 'handleShippingratesFetch', 'active' => false],
+            self::webhookTaxesCalculate => ['method' => 'handleTaxesCalculate', 'active' => true],
+            self::webhookCustomerUpdated => ['method' => 'handleCustomerUpdated', 'active' => false],
         );
 
         // Get SnipWire module config.
@@ -125,17 +133,17 @@ class Webhooks extends WireData {
      * @return void
      *
      */
-    public function process() {
+    public function process()
+    {
         $sniprest = $this->wire('sniprest');
         $log = $this->wire('log');
-        
+
         // Set default header
         header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
         header('Cache-Control: post-check=0, pre-check=0', false);
         header('Pragma: no-cache');
 
         $this->serverProtocol = $_SERVER['SERVER_PROTOCOL'];
-
         if (!$this->_isValidRequest()) {
             // 404 Not Found
             header($this->serverProtocol . ' ' . $sniprest->getHttpStatusCodeString(404));
@@ -147,13 +155,13 @@ class Webhooks extends WireData {
             return;
         }
         $this->_handleWebhookData();
-        
+
         header($this->serverProtocol . ' ' . $sniprest->getHttpStatusCodeString($this->responseStatus));
         if (!empty($this->responseBody)) {
             header('Content-Type: application/json; charset=utf-8');
             echo $this->responseBody;
         }
-        
+
         if ($this->debug) {
             $log->save(
                 self::snipWireWebhooksLogName,
@@ -174,7 +182,8 @@ class Webhooks extends WireData {
      * @return array The current payload
      *
      */
-    public function getPayload() {
+    public function getPayload()
+    {
         return $this->payload;
     }
 
@@ -184,7 +193,8 @@ class Webhooks extends WireData {
      * @return integer The current response status code
      *
      */
-    public function getResponseStatus() {
+    public function getResponseStatus()
+    {
         return $this->responseStatus;
     }
 
@@ -194,7 +204,8 @@ class Webhooks extends WireData {
      * @return string The current response body (JSON formatted)
      *
      */
-    public function getResponseBody() {
+    public function getResponseBody()
+    {
         return $this->responseBody;
     }
 
@@ -206,13 +217,26 @@ class Webhooks extends WireData {
      * @return boolean
      *
      */
-    private function _isValidRequest() {
-        $sniprest = $this->wire('sniprest');
+    private function _isValidRequest()
+    {
         $log = $this->wire('log');
+        $this->rawPayload = file_get_contents('php://input');
+
+
+        if ($this->debug) {
+            $log->save(
+                self::snipWireWebhooksLogName,
+                '[DEBUG] $_SERVER: ' . json_encode($_SERVER)
+            );
+            $log->save(
+                self::snipWireWebhooksLogName,
+                '[DEBUG] payload: ' . json_encode($this->rawPayload)
+            );
+        }
 
         // Perform multiple checks for valid request
         if (
-            $this->getServerVar('REQUEST_METHOD') != 'POST' || 
+            $this->_isPostRequest() === false ||
             stripos($this->getServerVar('CONTENT_TYPE'), 'application/json') === false
         ) {
             $log->save(
@@ -227,14 +251,35 @@ class Webhooks extends WireData {
                 $this->_('Invalid webhooks request: no request token')
             );
             return false;
+        } else {
+            if ($this->debug) {
+                $log->save(
+                    self::snipWireWebhooksLogName,
+                    '[DEBUG] request token: ' . $requestToken
+                );
+            }
         }
+        $sniprest = $this->wire('sniprest');
         $handshakeUrl = $sniprest::apiEndpoint . $sniprest::resPathRequestValidation . '/' . $requestToken;
+        if ($this->debug) {
+            $log->save(
+                self::snipWireWebhooksLogName,
+                '[DEBUG] handshakeUrl: ' . $handshakeUrl
+            );
+        }
+
         if (($handshake = $sniprest->get($handshakeUrl)) === false) {
             $log->save(
                 self::snipWireWebhooksLogName,
                 $this->_('Snipcart REST connection for checking request token failed:') . ' ' . $sniprest->getError()
             );
             return false;
+        }
+        if ($this->debug) {
+            $log->save(
+                self::snipWireWebhooksLogName,
+                '[DEBUG] handshake: ' . $handshake
+            );
         }
         if (empty($handshake) || $sniprest->getHttpCode(false) != 200) {
             $log->save(
@@ -244,6 +289,12 @@ class Webhooks extends WireData {
             return false;
         }
         $json = json_decode($handshake, true);
+        if ($this->debug) {
+            $log->save(
+                self::snipWireWebhooksLogName,
+                '[DEBUG] json: ' . json_encode($json)
+            );
+        }
         if (!$json) {
             $log->save(
                 self::snipWireWebhooksLogName,
@@ -258,7 +309,21 @@ class Webhooks extends WireData {
             );
             return false;
         }
-        return true;  
+        return true;
+    }
+
+    /**
+     * Check if request is POST.
+     * in different environment: apache/nginx
+     * @return boolean
+     *
+     */
+    private function _isPostRequest()
+    {
+        $requestMethod = $this->getServerVar('REQUEST_METHOD');
+        $override = $this->getServerVar('HTTP_X_HTTP_METHOD_OVERRIDE');
+
+        return $requestMethod === 'POST' || $override === 'POST';
     }
 
     /**
@@ -267,48 +332,43 @@ class Webhooks extends WireData {
      * @return boolean
      *
      */
-    private function _hasValidRequestData() {
+    private function _hasValidRequestData()
+    {
         $log = $this->wire('log');
-        $rawPayload = file_get_contents('php://input');
-        $payload = json_decode($rawPayload, true);
-        
+        $payload = json_decode($this->rawPayload, true);
+
         if ($this->debug) $log->save(
             self::snipWireWebhooksLogName,
-            '[DEBUG] Webhooks request payload: ' . $rawPayload
+            '[DEBUG] Webhooks request payload: ' . $this->rawPayload
         );
-        
+
         // Perform multiple checks for valid request data
         $check = false;
         if (is_null($payload) || !is_array($payload)) {
             $log->save(
-                self::snipWireWebhooksLogName, 
+                self::snipWireWebhooksLogName,
                 $this->_('Webhooks request: invalid request data - not an array')
             );
-        
         } elseif (!isset($payload['eventName'])) {
             $log->save(
                 self::snipWireWebhooksLogName,
                 $this->_('Webhooks request: invalid request data - key eventName missing')
             );
-            
         } elseif (!array_key_exists($payload['eventName'], $this->webhookEventsIndex)) {
             $log->save(
                 self::snipWireWebhooksLogName,
                 $this->_('Webhooks request: invalid request data - unknown event')
             );
-            
         } elseif (!isset($payload['mode']) || !in_array($payload['mode'], array(self::webhookModeLive, self::webhookModeTest))) {
             $log->save(
                 self::snipWireWebhooksLogName,
                 $this->_('Webhooks request: invalid request data - wrong or missing mode')
             );
-            
         } elseif (!isset($payload['content'])) {
             $log->save(
                 self::snipWireWebhooksLogName,
                 $this->_('Webhooks request: invalid request data - missing content')
             );
-            
         } else {
             $this->event = $payload['eventName'];
             $this->payload = $payload;
@@ -321,9 +381,10 @@ class Webhooks extends WireData {
      * Route the request to the appropriate handler method.
      *
      */
-    private function _handleWebhookData() {
+    private function _handleWebhookData()
+    {
         $log = $this->wire('log');
-        
+
         if (empty($this->event)) {
             $log->save(
                 self::snipWireWebhooksLogName,
@@ -332,24 +393,53 @@ class Webhooks extends WireData {
             $this->responseStatus = 500; // Internal Server Error
             return;
         }
-        $methodName = $this->webhookEventsIndex[$this->event];
-        if (!method_exists($this, '___' . $methodName)) {
+        /** @var array $eventData */
+        $eventData = isset($this->webhookEventsIndex[$this->event]) ? $this->webhookEventsIndex[$this->event] : false;
+        if ($eventData) {
+            if (isset($eventData['method']) && $methodName = $eventData['method']) {
+                if (!method_exists($this, '___' . $methodName)) {
+                    $log->save(
+                        self::snipWireWebhooksLogName,
+                        $this->_('_handleWebhookData: method does not exist') . ' ' . $methodName
+                    );
+                    $this->responseStatus = 500; // Internal Server Error
+                    return;
+                }
+                if (isset($eventData['active']) && $eventData['active']) {
+                    // Call the appropriate handler
+                    $this->{$methodName}();
+                } else {
+                    $this->handleInactiveWebhook($this->event);
+                }
+            }
+        } else {
             $log->save(
                 self::snipWireWebhooksLogName,
-                $this->_('_handleWebhookData: method does not exist') . ' ' . $methodName
+                $this->_('_handleWebhookData: Webhook eventName does not exist:') . ' ' . $this->event
             );
             $this->responseStatus = 500; // Internal Server Error
-            return;
         }
-        
-        // Call the appropriate handler
-        $this->{$methodName}();
+    }
+
+    /**
+     * handler for all inactive webhooks
+     * @param string $eventName name of the webhook event
+     * @return string empty string for response body
+     */
+    private function handleInactiveWebhook($eventName)
+    {
+        if ($this->debug) $this->wire('log')->save(
+            self::snipWireWebhooksLogName,
+            '[DEBUG] Request for inactive Webhook: ' . $eventName
+        );
+        $this->responseStatus = 202; // Accepted
+        return '';
     }
 
     //
     // Hookable event handler methods
     //
-    
+
     /**
      * Webhook handler for order completed.
      * This event is triggered when a new order has been completed successfully.
@@ -358,7 +448,8 @@ class Webhooks extends WireData {
      * @return array The payload sent by Snipcart
      *
      */
-    public function ___handleOrderCompleted() {
+    public function ___handleOrderCompleted()
+    {
         if ($this->debug) $this->wire('log')->save(
             self::snipWireWebhooksLogName,
             '[DEBUG] Webhooks request: handleOrderCompleted'
@@ -376,7 +467,8 @@ class Webhooks extends WireData {
      * @return array The payload sent by Snipcart
      *
      */
-    public function ___handleOrderStatusChanged() {
+    public function ___handleOrderStatusChanged()
+    {
         if ($this->debug) $this->wire('log')->save(
             self::snipWireWebhooksLogName,
             '[DEBUG] Webhooks request: handleOrderStatusChanged'
@@ -394,7 +486,8 @@ class Webhooks extends WireData {
      * @return array The payload sent by Snipcart
      *
      */
-    public function ___handleOrderPaymentStatusChanged() {
+    public function ___handleOrderPaymentStatusChanged()
+    {
         if ($this->debug) $this->wire('log')->save(
             self::snipWireWebhooksLogName,
             '[DEBUG] Webhooks request: handleOrderPaymentStatusChanged'
@@ -411,7 +504,8 @@ class Webhooks extends WireData {
      * @return array The payload sent by Snipcart
      *
      */
-    public function ___handleOrderTrackingNumberChanged() {
+    public function ___handleOrderTrackingNumberChanged()
+    {
         if ($this->debug) $this->wire('log')->save(
             self::snipWireWebhooksLogName,
             '[DEBUG] Webhooks request: handleOrderTrackingNumberChanged'
@@ -427,7 +521,8 @@ class Webhooks extends WireData {
      * @return array The payload sent by Snipcart
      *
      */
-    public function ___handleSubscriptionCreated() {
+    public function ___handleSubscriptionCreated()
+    {
         if ($this->debug) $this->wire('log')->save(
             self::snipWireWebhooksLogName,
             '[DEBUG] Webhooks request: handleSubscriptionCreated'
@@ -443,7 +538,8 @@ class Webhooks extends WireData {
      * @return array The payload sent by Snipcart
      *
      */
-    public function ___handleSubscriptionCancelled() {
+    public function ___handleSubscriptionCancelled()
+    {
         if ($this->debug) $this->wire('log')->save(
             self::snipWireWebhooksLogName,
             '[DEBUG] Webhooks request: handleSubscriptionCancelled'
@@ -459,7 +555,8 @@ class Webhooks extends WireData {
      * @return array The payload sent by Snipcart
      *
      */
-    public function ___handleSubscriptionPaused() {
+    public function ___handleSubscriptionPaused()
+    {
         if ($this->debug) $this->wire('log')->save(
             self::snipWireWebhooksLogName,
             '[DEBUG] Webhooks request: handleSubscriptionPaused'
@@ -475,7 +572,8 @@ class Webhooks extends WireData {
      * @return array The payload sent by Snipcart
      *
      */
-    public function ___handleSubscriptionResumed() {
+    public function ___handleSubscriptionResumed()
+    {
         if ($this->debug) $this->wire('log')->save(
             self::snipWireWebhooksLogName,
             '[DEBUG] Webhooks request: handleSubscriptionResumed'
@@ -492,7 +590,8 @@ class Webhooks extends WireData {
      * @return array The payload sent by Snipcart
      *
      */
-    public function ___handleSubscriptionInvoiceCreated() {
+    public function ___handleSubscriptionInvoiceCreated()
+    {
         if ($this->debug) $this->wire('log')->save(
             self::snipWireWebhooksLogName,
             '[DEBUG] Webhooks request: handleSubscriptionInvoiceCreated'
@@ -508,16 +607,17 @@ class Webhooks extends WireData {
      * @return array The payload sent by Snipcart
      *
      */
-    public function ___handleShippingratesFetch() {
+    public function ___handleShippingratesFetch()
+    {
         if ($this->debug) $this->wire('log')->save(
             self::snipWireWebhooksLogName,
             '[DEBUG] Webhooks request: handleShippingratesFetch'
         );
-        
-        
+
+
         // @todo: implement custom shipping rates
-        
-         
+
+
         $this->responseStatus = 202; // Accepted
         return $this->payload;
     }
@@ -529,9 +629,10 @@ class Webhooks extends WireData {
      * @return array The payload sent by Snipcart
      *
      */
-    public function ___handleTaxesCalculate() {        
+    public function ___handleTaxesCalculate()
+    {
         $log = $this->wire('log');
-        
+
         if ($this->debug) $log->save(
             self::snipWireWebhooksLogName,
             '[DEBUG] Webhooks request: handleTaxesCalculate'
@@ -548,7 +649,7 @@ class Webhooks extends WireData {
         }
 
         // Sample payload array: https://docs.snipcart.com/webhooks/taxes
-        
+
         $payload = $this->payload;
         $content = isset($payload['content']) ? $payload['content'] : null;
         if ($content) {
@@ -557,157 +658,158 @@ class Webhooks extends WireData {
             $itemsTotal = isset($content['itemsTotal']) ? $content['itemsTotal'] : null; // decimal
             $currency = isset($content['currency']) ? $content['currency'] : null; // string
         }
-        
-        if (!$items || !$shippingInformation || !$itemsTotal || !$currency) {
+        if ($itemsTotal === 0) {
+            // handle case when all items are removed from cart: https://support.snipcart.com/t/solved-webhook-taxes-response-when-no-items/1764
+            $taxesResponse = array();
+        } elseif (!is_array($items) || !$shippingInformation || !$currency) {
             $log->save(
                 self::snipWireWebhooksLogName,
                 $this->_('Webhooks request: handleTaxesCalculate - invalid request data for taxes calculation')
             );
             $this->responseStatus = 400; // Bad Request
             return;
-        }
+        } else {
+            $hasTaxesIncluded = Taxes::getTaxesIncludedConfig();
+            $shippingTaxesType = Taxes::getShippingTaxesTypeConfig();
+            $currencyPrecision = CurrencyFormat::getCurrencyDefinition($currency, 'precision');
+            if (!$currencyPrecision) $currencyPrecision = 2;
 
-        $hasTaxesIncluded = Taxes::getTaxesIncludedConfig();
-        $shippingTaxesType = Taxes::getShippingTaxesTypeConfig();
-        $currencyPrecision = CurrencyFormat::getCurrencyDefinition($currency, 'precision');
-        if (!$currencyPrecision) $currencyPrecision = 2;
+            $taxNamePrefix = $hasTaxesIncluded
+                ? $this->_('incl.') // Tax name prefix if taxes included in price (keep it short)
+                : '+';
+            $taxNamePrefix .= ' ';
 
-        $taxNamePrefix = $hasTaxesIncluded
-            ? $this->_('incl.') // Tax name prefix if taxes included in price (keep it short)
-            : '+';
-        $taxNamePrefix .= ' ';
-
-        // Collect and group all tax names and total prices (before taxes) from items in payload
-        $itemTaxes = array();
-        foreach ($items as $item) {
-            if (!$item['taxable']) continue;
-            $taxName = $item['taxes'][0]; // we currently only support a single tax per product!
-            if (!isset($itemTaxes[$taxName])) {
-                // add new array entry
-                $itemTaxes[$taxName] = array(
-                    'sumPrices' => $item['totalPriceWithoutTaxes'],
-                    'splitRatio' => 0, // is calculated later
-                );
-            } else {
-                // add price to existing sumPrices
-                $itemTaxes[$taxName]['sumPrices'] += $item['totalPriceWithoutTaxes'];
+            // Collect and group all tax names and total prices (before taxes) from items in payload
+            $itemTaxes = array();
+            foreach ($items as $item) {
+                if (!$item['taxable']) continue;
+                $taxName = $item['taxes'][0]; // we currently only support a single tax per product!
+                if (!isset($itemTaxes[$taxName])) {
+                    // add new array entry
+                    $itemTaxes[$taxName] = array(
+                        'sumPrices' => $item['totalPriceWithoutTaxes'],
+                        'splitRatio' => 0, // is calculated later
+                    );
+                } else {
+                    // add price to existing sumPrices
+                    $itemTaxes[$taxName]['sumPrices'] += $item['totalPriceWithoutTaxes'];
+                }
             }
-        }
 
-        // Calculate and add proportional ratio (for splittet shipping tax calculation)
-        foreach ($itemTaxes as $name => $values) {
-            $itemTaxes[$name]['splitRatio'] = round(($values['sumPrices'] / $itemsTotal), 2); // e.g. 0.35 = 35%
-            // @todo: what if $itemsTotal = 0? (division by 0 error!)
-        }
-        unset($name, $values);
+            // Calculate and add proportional ratio (for splittet shipping tax calculation)
+            foreach ($itemTaxes as $name => $values) {
+                $itemTaxes[$name]['splitRatio'] = round(($values['sumPrices'] / $itemsTotal), 2); // e.g. 0.35 = 35%
+            }
+            unset($name, $values);
 
-        /*
-        Results in $itemTaxes (sample) array:
-        
-        array(
-            '20% VAT' => array(
-                "sumPrices' => 300
-                'splitRatio' => 0.67
+            /*
+            Results in $itemTaxes (sample) array:
+            
+            array(
+                '20% VAT' => array(
+                    "sumPrices' => 300
+                    'splitRatio' => 0.67
+                )
+                '10% VAT' => array(
+                    'sumPrices' => 150
+                    'splitRatio' => 0.33
+                )
             )
-            '10% VAT' => array(
-                'sumPrices' => 150
-                'splitRatio' => 0.33
-            )
-        )
-        
-        Sample splitRatio calculation: 300 / (300 + 150) = 0.67 = 67%
-        */
+            
+            Sample splitRatio calculation: 300 / (300 + 150) = 0.67 = 67%
+            */
 
-        //
-        // Prepare item & shipping taxes response
-        //
+            //
+            // Prepare item & shipping taxes response
+            //
 
-        $taxesResponse = array();
-        $taxConfigMax = array();
-        $maxRate = 0;
+            $taxesResponse = array();
+            $taxConfigMax = array();
+            $maxRate = 0;
 
-        foreach ($itemTaxes as $name => $values) {
-            $taxConfig = Taxes::getTaxesConfig(false, Taxes::taxesTypeProducts, $name);
-            if (!empty($taxConfig)) {
-                $taxesResponse[] = array(
-                    'name' => $taxNamePrefix . $name,
-                    'amount' => Taxes::calculateTax($values['sumPrices'], $taxConfig['rate'], $hasTaxesIncluded, $currencyPrecision),
-                    'rate' => $taxConfig['rate'],
-                    'numberForInvoice' => $taxConfig['numberForInvoice'],
-                    'includedInPrice' => $hasTaxesIncluded,
-                    //'appliesOnShipping' // not needed,
-                );
+            foreach ($itemTaxes as $name => $values) {
+                $taxConfig = Taxes::getTaxesConfig(false, Taxes::taxesTypeProducts, $name);
+                if (!empty($taxConfig)) {
+                    $taxesResponse[] = array(
+                        'name' => $taxNamePrefix . $name,
+                        'amount' => Taxes::calculateTax($values['sumPrices'], $taxConfig['rate'], $hasTaxesIncluded, $currencyPrecision),
+                        'rate' => $taxConfig['rate'],
+                        'numberForInvoice' => $taxConfig['numberForInvoice'],
+                        'includedInPrice' => $hasTaxesIncluded,
+                        //'appliesOnShipping' // not needed,
+                    );
 
-                // Get tax config with highest rate (for shipping tax calculation)
-                if ($shippingTaxesType == Taxes::shippingTaxesHighestRate) {
-                    if ($taxConfig['rate'] > $maxRate) {
-                        $maxRate = $taxConfig['rate'];
-                        $taxConfigMax = $taxConfig;
+                    // Get tax config with highest rate (for shipping tax calculation)
+                    if ($shippingTaxesType == Taxes::shippingTaxesHighestRate) {
+                        if ($taxConfig['rate'] > $maxRate) {
+                            $maxRate = $taxConfig['rate'];
+                            $taxConfigMax = $taxConfig;
+                        }
                     }
                 }
             }
-        }
-        unset($name, $values);
+            unset($name, $values);
 
-        if ($shippingTaxesType != Taxes::shippingTaxesNone) {
-            $shippingFees = isset($shippingInformation['fees'])
-                ? $shippingInformation['fees']
-                : 0;
-            $shippingMethod = isset($shippingInformation['method'])
-                ? ' (' . $shippingInformation['method'] . ')'
-                : '';
+            if ($shippingTaxesType != Taxes::shippingTaxesNone) {
+                $shippingFees = isset($shippingInformation['fees'])
+                    ? $shippingInformation['fees']
+                    : 0;
+                $shippingMethod = isset($shippingInformation['method'])
+                    ? ' (' . $shippingInformation['method'] . ')'
+                    : '';
 
-            if ($shippingFees > 0) {
-                switch ($shippingTaxesType) {
-                    case Taxes::shippingTaxesFixedRate :
-                        $taxConfig = Taxes::getFirstTax(false, Taxes::taxesTypeShipping);
-                        if (!empty($taxConfig)) {
-                            $taxesResponse[] = array(
-                                'name' => $taxNamePrefix . $taxConfig['name'] . $shippingMethod,
-                                'amount' => Taxes::calculateTax($shippingFees, $taxConfig['rate'], $hasTaxesIncluded, $currencyPrecision),
-                                'rate' => $taxConfig['rate'],
-                                'numberForInvoice' => $taxConfig['numberForInvoice'],
-                                'includedInPrice' => $hasTaxesIncluded,
-                                //'appliesOnShipping' // not needed,
-                            );
-                        }
-                        break;
-
-                    case Taxes::shippingTaxesHighestRate :
-                        if (!empty($taxConfigMax)) {
-                            $taxesResponse[] = array(
-                                'name' => $taxNamePrefix . $taxConfigMax['name'] . $shippingMethod,
-                                'amount' => Taxes::calculateTax($shippingFees, $taxConfigMax['rate'], $hasTaxesIncluded, $currencyPrecision),
-                                'rate' => $taxConfigMax['rate'],
-                                'numberForInvoice' => $taxConfigMax['numberForInvoice'],
-                                'includedInPrice' => $hasTaxesIncluded,
-                                //'appliesOnShipping' // not needed,
-                            );
-                        }
-                        break;
-
-                    case Taxes::shippingTaxesSplittedRate :
-                        foreach ($itemTaxes as $name => $values) {
-                            $shippingFeesSplit = round(($shippingFees * $values['splitRatio']), 2);
-                            $taxConfig = Taxes::getTaxesConfig(false, Taxes::taxesTypeProducts, $name);
+                if ($shippingFees > 0) {
+                    switch ($shippingTaxesType) {
+                        case Taxes::shippingTaxesFixedRate:
+                            $taxConfig = Taxes::getFirstTax(false, Taxes::taxesTypeShipping);
                             if (!empty($taxConfig)) {
                                 $taxesResponse[] = array(
                                     'name' => $taxNamePrefix . $taxConfig['name'] . $shippingMethod,
-                                    'amount' => Taxes::calculateTax($shippingFeesSplit, $taxConfig['rate'], $hasTaxesIncluded, $currencyPrecision),
+                                    'amount' => Taxes::calculateTax($shippingFees, $taxConfig['rate'], $hasTaxesIncluded, $currencyPrecision),
                                     'rate' => $taxConfig['rate'],
                                     'numberForInvoice' => $taxConfig['numberForInvoice'],
                                     'includedInPrice' => $hasTaxesIncluded,
                                     //'appliesOnShipping' // not needed,
                                 );
                             }
-                        }
-                        break;                
+                            break;
+
+                        case Taxes::shippingTaxesHighestRate:
+                            if (!empty($taxConfigMax)) {
+                                $taxesResponse[] = array(
+                                    'name' => $taxNamePrefix . $taxConfigMax['name'] . $shippingMethod,
+                                    'amount' => Taxes::calculateTax($shippingFees, $taxConfigMax['rate'], $hasTaxesIncluded, $currencyPrecision),
+                                    'rate' => $taxConfigMax['rate'],
+                                    'numberForInvoice' => $taxConfigMax['numberForInvoice'],
+                                    'includedInPrice' => $hasTaxesIncluded,
+                                    //'appliesOnShipping' // not needed,
+                                );
+                            }
+                            break;
+
+                        case Taxes::shippingTaxesSplittedRate:
+                            foreach ($itemTaxes as $name => $values) {
+                                $shippingFeesSplit = round(($shippingFees * $values['splitRatio']), 2);
+                                $taxConfig = Taxes::getTaxesConfig(false, Taxes::taxesTypeProducts, $name);
+                                if (!empty($taxConfig)) {
+                                    $taxesResponse[] = array(
+                                        'name' => $taxNamePrefix . $taxConfig['name'] . $shippingMethod,
+                                        'amount' => Taxes::calculateTax($shippingFeesSplit, $taxConfig['rate'], $hasTaxesIncluded, $currencyPrecision),
+                                        'rate' => $taxConfig['rate'],
+                                        'numberForInvoice' => $taxConfig['numberForInvoice'],
+                                        'includedInPrice' => $hasTaxesIncluded,
+                                        //'appliesOnShipping' // not needed,
+                                    );
+                                }
+                            }
+                            break;
+                    }
                 }
             }
         }
 
         $taxes = array('taxes' => $taxesResponse);
-        
+
         $this->responseStatus = 202; // Accepted
         $this->responseBody = \ProcessWire\wireEncodeJSON($taxes, true);
         return $this->payload;
@@ -722,7 +824,8 @@ class Webhooks extends WireData {
      * @return array The payload sent by Snipcart
      *
      */
-    public function ___handleCustomerUpdated() {
+    public function ___handleCustomerUpdated()
+    {
         if ($this->debug) $this->wire('log')->save(
             self::snipWireWebhooksLogName,
             '[DEBUG] Webhooks request: handleCustomerUpdated'
@@ -740,8 +843,8 @@ class Webhooks extends WireData {
      * (This could return an empty string so needs to checked with === false)
      *
      */
-    public function getServerVar($var) {
+    public function getServerVar($var)
+    {
         return isset($_SERVER[$var]) ? $_SERVER[$var] : false;
     }
-    
 }
