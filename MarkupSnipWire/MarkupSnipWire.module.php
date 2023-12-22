@@ -576,7 +576,7 @@ class MarkupSnipWire extends WireData implements Module
             // build url from product that this is a variation of and variation page id
             $prod = $product->getForPage(); // gets the product page that variation lives on
             if ($prod && $prod->id) {
-                $productUrl = $prod->httpUrl . '?variation=' . $product;
+                $productUrl = $prod->httpUrl;
             }
         } else {
             $productUrl = $product->httpUrl;
@@ -685,7 +685,8 @@ class MarkupSnipWire extends WireData implements Module
         $snipwireConfig = $this->snipwireConfig;
         $productThumb = null;
         // bd($product);
-        if ($image = $product->getUnformatted('snipcart_item_image')->first()) {
+        if ($product->getUnformatted('snipcart_item_image')->count()) {
+            $image = $product->getUnformatted('snipcart_item_image')->first();
             $productThumb = $image->size($snipwireConfig->cart_image_width, $snipwireConfig->cart_image_height, [
                 'cropping' => $snipwireConfig->cart_image_cropping ? true : false,
                 'quality' => $snipwireConfig->cart_image_quality,
@@ -857,9 +858,41 @@ class MarkupSnipWire extends WireData implements Module
         // Prepare tag attributes
         $defaultsAttr = isset($defaults['attr']) && is_array($defaults['attr']) ? $defaults['attr'] : array();
         $optionsAttr = isset($options['attr']) && is_array($options['attr']) ? $options['attr'] : array();
-        $options['attr'] = array_unique(array_merge($defaultsAttr, $optionsAttr));
+        $options['attr'] = $this->unique_key_value_pairs(array_merge($defaultsAttr, $optionsAttr));
         unset($defaults['attr']);
 
         return array_merge($defaults, $options);
+    }
+
+
+    /**
+     * Filters an array to contain only unique key-value pairs.
+     *
+     * Loops through the input array, generates a composite key for each 
+     * key-value pair, and adds to result array if key not already present.
+     *
+     * Returns a new array containing only unique key-value pairs from the input.
+     * 
+     * @param array $array
+     * @return array
+     */
+    private function unique_key_value_pairs($array)
+    {
+        $unique = [];
+        foreach ($array as $key => $value) {
+            // Creating a unique composite key
+            $composite_key = $key . '::' . $value;
+            if (!array_key_exists($composite_key, $unique)) {
+                $unique[$composite_key] = ['key' => $key, 'value' => $value];
+            }
+        }
+
+        // Reconstructing the array with unique key-value pairs
+        $result = [];
+        foreach ($unique as $item) {
+            $result[$item['key']] = $item['value'];
+        }
+
+        return $result;
     }
 }
