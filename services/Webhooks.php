@@ -44,6 +44,7 @@ namespace SnipWire\Services;
 
 use SnipWire\Helpers\CurrencyFormat;
 use SnipWire\Helpers\Taxes;
+use SnipWire\Services\SnipREST;
 use ProcessWire\WireData;
 use ProcessWire\WireException;
 
@@ -135,6 +136,7 @@ class Webhooks extends WireData
      */
     public function process()
     {
+        /** @var SnipREST $sniprest  */
         $sniprest = $this->wire('sniprest');
         $log = $this->wire('log');
 
@@ -145,11 +147,23 @@ class Webhooks extends WireData
 
         $this->serverProtocol = $_SERVER['SERVER_PROTOCOL'];
         if (!$this->_isValidRequest()) {
+            if ($this->debug) {
+                $log->save(
+                    self::snipWireWebhooksLogName,
+                    '[DEBUG] Invalid request - responseStatus = 404'
+                );
+            }    
             // 404 Not Found
             header($this->serverProtocol . ' ' . $sniprest->getHttpStatusCodeString(404));
             return;
         }
         if (!$this->_hasValidRequestData()) {
+            if ($this->debug) {
+                $log->save(
+                    self::snipWireWebhooksLogName,
+                    '[DEBUG] Bad request (no valid request data) - responseStatus = 400'
+                );
+            }    
             // 400 Bad Request 
             header($this->serverProtocol . ' ' . $sniprest->getHttpStatusCodeString(400));
             return;
@@ -433,6 +447,7 @@ class Webhooks extends WireData
             '[DEBUG] Request for inactive Webhook: ' . $eventName
         );
         $this->responseStatus = 202; // Accepted
+        $this->responseBody = \ProcessWire\wireEncodeJSON($this->payload, true);
         return '';
     }
 
@@ -472,6 +487,23 @@ class Webhooks extends WireData
         if ($this->debug) $this->wire('log')->save(
             self::snipWireWebhooksLogName,
             '[DEBUG] Webhooks request: handleOrderStatusChanged'
+        );
+        $this->responseStatus = 202; // Accepted
+        return $this->payload;
+    }
+
+    /**
+     * Webhook handler for order notification created.
+     * This event is triggered whenever a notification is added to an order.
+     *
+     * @return array The payload sent by Snipcart
+     *
+     */
+    public function ___handleOrderNotificationCreated()
+    {
+        if ($this->debug) $this->wire('log')->save(
+            self::snipWireWebhooksLogName,
+            '[DEBUG] Webhooks request: handleOrderNotificationCreated'
         );
         $this->responseStatus = 202; // Accepted
         return $this->payload;
