@@ -78,6 +78,9 @@ class Webhooks extends WireData
     /** @var boolean Turn on/off debug mode for Webhooks class */
     private $debug = false;
 
+    /** @var boolean Indicates if the local development environment is being used */
+    private $localDev = false;
+
     /** @var string $serverProtocol The server protocol (e.g. HTTP/1.1) */
     protected $serverProtocol = '';
 
@@ -125,7 +128,8 @@ class Webhooks extends WireData
         // (Holds merged data from DB and default config. 
         // This works because of using the ModuleConfig class)
         $this->snipwireConfig = $this->wire('modules')->get('SnipWire');
-        $this->debug = $this->snipwireConfig->snipwire_debug;
+        $this->debug = (bool) $this->snipwireConfig->snipwire_debug;
+        $this->localDev = (bool) $this->snipwireConfig->local_dev;
     }
 
     /**
@@ -152,7 +156,7 @@ class Webhooks extends WireData
                     self::snipWireWebhooksLogName,
                     '[DEBUG] Invalid request - responseStatus = 404'
                 );
-            }    
+            }
             // 404 Not Found
             header($this->serverProtocol . ' ' . $sniprest->getHttpStatusCodeString(404));
             return;
@@ -163,7 +167,7 @@ class Webhooks extends WireData
                     self::snipWireWebhooksLogName,
                     '[DEBUG] Bad request (no valid request data) - responseStatus = 400'
                 );
-            }    
+            }
             // 400 Bad Request 
             header($this->serverProtocol . ' ' . $sniprest->getHttpStatusCodeString(400));
             return;
@@ -223,6 +227,44 @@ class Webhooks extends WireData
         return $this->responseBody;
     }
 
+
+    /**
+     * Getter for snipwireConfig.
+     *
+     * @return object The snipwireConfig object
+     *
+     */
+    public function getSnipwireConfig()
+    {
+        return $this->snipwireConfig;
+    }
+
+
+    /**
+     * Getter for debug.
+     *
+     * @return bool The current debug status
+     *
+     */
+    public function getDebug(): bool
+    {
+        return (bool) $this->debug;
+    }
+
+
+    /**
+     * Getter for localDev.
+     *
+     * @return bool The current local development environment status
+     *
+     */
+    public function getLocalDev(): bool
+    {
+        return (bool) $this->localDev;
+    }
+
+
+
     /**
      * Validate a Snipcart webhook endpoint request.
      * - check request method and content type
@@ -273,55 +315,60 @@ class Webhooks extends WireData
                 );
             }
         }
-        $sniprest = $this->wire('sniprest');
-        $handshakeUrl = $sniprest::apiEndpoint . $sniprest::resPathRequestValidation . '/' . $requestToken;
-        if ($this->debug) {
-            $log->save(
-                self::snipWireWebhooksLogName,
-                '[DEBUG] handshakeUrl: ' . $handshakeUrl
-            );
-        }
 
-        if (($handshake = $sniprest->get($handshakeUrl)) === false) {
-            $log->save(
-                self::snipWireWebhooksLogName,
-                $this->_('Snipcart REST connection for checking request token failed:') . ' ' . $sniprest->getError()
-            );
-            return false;
-        }
-        if ($this->debug) {
-            $log->save(
-                self::snipWireWebhooksLogName,
-                '[DEBUG] handshake: ' . $handshake
-            );
-        }
-        if (empty($handshake) || $sniprest->getHttpCode(false) != 200) {
-            $log->save(
-                self::snipWireWebhooksLogName,
-                $this->_('Invalid webhooks request: no response')
-            );
-            return false;
-        }
-        $json = json_decode($handshake, true);
-        if ($this->debug) {
-            $log->save(
-                self::snipWireWebhooksLogName,
-                '[DEBUG] json: ' . json_encode($json)
-            );
-        }
-        if (!$json) {
-            $log->save(
-                self::snipWireWebhooksLogName,
-                $this->_('Invalid webhooks request: response not json')
-            );
-            return false;
-        }
-        if (!isset($json['token']) || $json['token'] !== $requestToken) {
-            $log->save(
-                self::snipWireWebhooksLogName,
-                $this->_('Invalid webhooks request: invalid token')
-            );
-            return false;
+        // perform handshake only if not on localDev
+        if (!$this->localDev) {
+            /** @var Sniprest $sniprest */
+            $sniprest = $this->wire('sniprest');
+            $handshakeUrl = $sniprest::apiEndpoint . $sniprest::resPathRequestValidation . '/' . $requestToken;
+            if ($this->debug) {
+                $log->save(
+                    self::snipWireWebhooksLogName,
+                    '[DEBUG] handshakeUrl: ' . $handshakeUrl
+                );
+            }
+
+            if (($handshake = $sniprest->get($handshakeUrl)) === false) {
+                $log->save(
+                    self::snipWireWebhooksLogName,
+                    $this->_('Snipcart REST connection for checking request token failed:') . ' ' . $sniprest->getError()
+                );
+                return false;
+            }
+            if ($this->debug) {
+                $log->save(
+                    self::snipWireWebhooksLogName,
+                    '[DEBUG] handshake: ' . $handshake
+                );
+            }
+            if (empty($handshake) || $sniprest->getHttpCode(false) != 200) {
+                $log->save(
+                    self::snipWireWebhooksLogName,
+                    $this->_('Invalid webhooks request: no response')
+                );
+                return false;
+            }
+            $json = json_decode($handshake, true);
+            if ($this->debug) {
+                $log->save(
+                    self::snipWireWebhooksLogName,
+                    '[DEBUG] json: ' . json_encode($json)
+                );
+            }
+            if (!$json) {
+                $log->save(
+                    self::snipWireWebhooksLogName,
+                    $this->_('Invalid webhooks request: response not json')
+                );
+                return false;
+            }
+            if (!isset($json['token']) || $json['token'] !== $requestToken) {
+                $log->save(
+                    self::snipWireWebhooksLogName,
+                    $this->_('Invalid webhooks request: invalid token')
+                );
+                return false;
+            }
         }
         return true;
     }
