@@ -175,12 +175,17 @@ class Webhooks extends WireData
         $this->_handleWebhookData();
 
         header($this->serverProtocol . ' ' . $sniprest->getHttpStatusCodeString($this->responseStatus));
+        header('Content-Type: application/json; charset=utf-8');
         if (!empty($this->responseBody)) {
-            header('Content-Type: application/json; charset=utf-8');
             echo $this->responseBody;
         }
 
         if ($this->debug) {
+            $headers = headers_list();
+            $log->save(
+                self::snipWireWebhooksLogName,
+                '[DEBUG] Response headers: ' . json_encode($headers)
+            );
             $log->save(
                 self::snipWireWebhooksLogName,
                 '[DEBUG] Webhooks request success: responseStatus = ' . $this->responseStatus
