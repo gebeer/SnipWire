@@ -10,9 +10,9 @@ namespace SnipWire\Services;
  * POST request from Snipcart. 
  * 
  * Licensed under MPL 2.0 (see LICENSE file provided with this package)
- * Copyright 2019 by Martin Gartner
+ * Copyright 2023 by Martin Gartner
  *
- * ProcessWire 3.x, Copyright 2019 by Ryan Cramer
+ * ProcessWire 3.x, Copyright Ryan Cramer
  * https://processwire.com
  *
  * ---
@@ -20,7 +20,7 @@ namespace SnipWire\Services;
  * Hookable event handler methods:
  *
  * All hookable event handler methods will return an array containing payload Snipcart sent to your endpoint.
- * In addition the following class properties will be set:
+ * In addition, the following class properties will be set:
  *
  * $this->payload (The payload Snipcart sent to your endpoint)
  * $this->responseStatus (The response status your endpoint sent to Snipcart)
@@ -73,7 +73,7 @@ class Webhooks extends WireData
     const webhookModeTest = 'Test';
 
     /** @var SnipWire $snipwireConfig The module config of SnipWire module */
-    protected $snipwireConfig;
+    protected $snipwireConfig = null;
 
     /** @var boolean Turn on/off debug mode for Webhooks class */
     private $debug = false;
@@ -85,7 +85,7 @@ class Webhooks extends WireData
     protected $serverProtocol = '';
 
     /** @var array $webhookEventsIndex All available webhook events */
-    protected $webhookEventsIndex = array();
+    protected $webhookEventsIndex = [];
 
     /** @var string $event The current Snipcart event */
     protected $event = '';
@@ -105,24 +105,25 @@ class Webhooks extends WireData
     /**
      * Set class properties.
      *
+     * @throws WireException
      */
     public function __construct()
     {
-        $this->webhookEventsIndex = array(
-            self::webhookOrderCompleted => ['method' => 'handleOrderCompleted', 'active' => false],
-            self::webhookOrderStatusChanged => ['method' => 'handleOrderStatusChanged', 'active' => false],
-            self::webhookOrderNotificationCreated => ['method' => 'handleOrderNotificationCreated', 'active' => false],
-            self::webhookOrderPaymentStatusChanged => ['method' => 'handleOrderPaymentStatusChanged', 'active' => false],
-            self::webhookOrderTrackingNumberChanged => ['method' => 'handleOrderTrackingNumberChanged', 'active' => false],
-            self::webhookSubscriptionCreated => ['method' => 'handleSubscriptionCreated', 'active' => false],
-            self::webhookSubscriptionCancelled => ['method' => 'handleSubscriptionCancelled', 'active' => false],
-            self::webhookSubscriptionPaused => ['method' => 'handleSubscriptionPaused', 'active' => false],
-            self::webhookSubscriptionResumed => ['method' => 'handleSubscriptionResumed', 'active' => false],
-            self::webhookSubscriptionInvoiceCreated => ['method' => 'handleSubscriptionInvoiceCreated', 'active' => false],
-            self::webhookShippingratesFetch => ['method' => 'handleShippingratesFetch', 'active' => false],
-            self::webhookTaxesCalculate => ['method' => 'handleTaxesCalculate', 'active' => true],
-            self::webhookCustomerUpdated => ['method' => 'handleCustomerUpdated', 'active' => false],
-        );
+        $this->webhookEventsIndex = [
+            self::webhookOrderCompleted => 'handleOrderCompleted',
+            self::webhookOrderStatusChanged => 'handleOrderStatusChanged',
+            self::webhookOrderNotificationCreated => 'handleOrderNotificationCreated',
+            self::webhookOrderPaymentStatusChanged => 'handleOrderPaymentStatusChanged',
+            self::webhookOrderTrackingNumberChanged => 'handleOrderTrackingNumberChanged',
+            self::webhookSubscriptionCreated => 'handleSubscriptionCreated',
+            self::webhookSubscriptionCancelled => 'handleSubscriptionCancelled',
+            self::webhookSubscriptionPaused => 'handleSubscriptionPaused',
+            self::webhookSubscriptionResumed => 'handleSubscriptionResumed',
+            self::webhookSubscriptionInvoiceCreated => 'handleSubscriptionInvoiceCreated',
+            self::webhookShippingratesFetch => 'handleShippingratesFetch',
+            self::webhookTaxesCalculate => 'handleTaxesCalculate',
+            self::webhookCustomerUpdated => 'handleCustomerUpdated',
+        ];
 
         // Get SnipWire module config.
         // (Holds merged data from DB and default config. 
@@ -136,7 +137,7 @@ class Webhooks extends WireData
      * Process webhooks requests.
      *
      * @return void
-     *
+     * @throws WireException
      */
     public function process()
     {
@@ -150,6 +151,7 @@ class Webhooks extends WireData
         header('Pragma: no-cache');
 
         $this->serverProtocol = $_SERVER['SERVER_PROTOCOL'];
+
         if (!$this->_isValidRequest()) {
             if ($this->debug) {
                 $log->save(
@@ -175,8 +177,8 @@ class Webhooks extends WireData
         $this->_handleWebhookData();
 
         header($this->serverProtocol . ' ' . $sniprest->getHttpStatusCodeString($this->responseStatus));
-        header('Content-Type: application/json; charset=utf-8');
         if (!empty($this->responseBody)) {
+            header('Content-Type: application/json; charset=utf-8');
             echo $this->responseBody;
         }
 
@@ -276,7 +278,7 @@ class Webhooks extends WireData
      * - check the request token (= handshake)
      *
      * @return boolean
-     *
+     * @throws WireException
      */
     private function _isValidRequest()
     {
@@ -396,7 +398,7 @@ class Webhooks extends WireData
      * Check if request has valid data and set $payload and $event class properties if OK.
      *
      * @return boolean
-     *
+     * @throws WireException
      */
     private function _hasValidRequestData()
     {
@@ -446,6 +448,7 @@ class Webhooks extends WireData
     /**
      * Route the request to the appropriate handler method.
      *
+     * @throws WireException
      */
     private function _handleWebhookData()
     {
@@ -459,32 +462,18 @@ class Webhooks extends WireData
             $this->responseStatus = 500; // Internal Server Error
             return;
         }
-        /** @var array $eventData */
-        $eventData = isset($this->webhookEventsIndex[$this->event]) ? $this->webhookEventsIndex[$this->event] : false;
-        if ($eventData) {
-            if (isset($eventData['method']) && $methodName = $eventData['method']) {
-                if (!method_exists($this, '___' . $methodName)) {
-                    $log->save(
-                        self::snipWireWebhooksLogName,
-                        $this->_('_handleWebhookData: method does not exist') . ' ' . $methodName
-                    );
-                    $this->responseStatus = 500; // Internal Server Error
-                    return;
-                }
-                if (isset($eventData['active']) && $eventData['active']) {
-                    // Call the appropriate handler
-                    $this->{$methodName}();
-                } else {
-                    $this->handleInactiveWebhook($this->event);
-                }
-            }
-        } else {
+        $methodName = $this->webhookEventsIndex[$this->event];
+        if (!method_exists($this, '___' . $methodName)) {
             $log->save(
                 self::snipWireWebhooksLogName,
-                $this->_('_handleWebhookData: Webhook eventName does not exist:') . ' ' . $this->event
+                $this->_('_handleWebhookData: method does not exist') . ' ' . $methodName
             );
             $this->responseStatus = 500; // Internal Server Error
+            return;
         }
+
+        // Call the appropriate handler
+        $this->{$methodName}();
     }
 
     /**
@@ -513,14 +502,14 @@ class Webhooks extends WireData
      * It will contain the whole order details.
      *
      * @return array The payload sent by Snipcart
-     *
+     * @throws WireException
      */
     public function ___handleOrderCompleted()
     {
-        if ($this->debug) $this->wire('log')->save(
-            self::snipWireWebhooksLogName,
-            '[DEBUG] Webhooks request: handleOrderCompleted'
-        );
+        // if ($this->debug) $this->wire('log')->save(
+        //     self::snipWireWebhooksLogName,
+        //     '[DEBUG] Webhooks request: handleOrderCompleted'
+        // );
         $this->responseStatus = 202; // Accepted
         return $this->payload;
     }
@@ -532,7 +521,7 @@ class Webhooks extends WireData
      * It will also contain the whole order details.
      *
      * @return array The payload sent by Snipcart
-     *
+     * @throws WireException
      */
     public function ___handleOrderStatusChanged()
     {
@@ -549,7 +538,7 @@ class Webhooks extends WireData
      * This event is triggered whenever a notification is added to an order.
      *
      * @return array The payload sent by Snipcart
-     *
+     * @throws WireException
      */
     public function ___handleOrderNotificationCreated()
     {
@@ -568,7 +557,7 @@ class Webhooks extends WireData
      * It will also contain the whole order details.
      *
      * @return array The payload sent by Snipcart
-     *
+     * @throws WireException
      */
     public function ___handleOrderPaymentStatusChanged()
     {
@@ -586,7 +575,7 @@ class Webhooks extends WireData
      * The event will contain the new tracking number and will also contain the order details.
      *
      * @return array The payload sent by Snipcart
-     *
+     * @throws WireException
      */
     public function ___handleOrderTrackingNumberChanged()
     {
@@ -603,7 +592,7 @@ class Webhooks extends WireData
      * This event is triggered whenever a new subscription is created.
      *
      * @return array The payload sent by Snipcart
-     *
+     * @throws WireException
      */
     public function ___handleSubscriptionCreated()
     {
@@ -620,7 +609,7 @@ class Webhooks extends WireData
      * This event is triggered when a subscription is cancelled, either by an admin or by the customer.
      *
      * @return array The payload sent by Snipcart
-     *
+     * @throws WireException
      */
     public function ___handleSubscriptionCancelled()
     {
@@ -637,7 +626,7 @@ class Webhooks extends WireData
      * This event is triggered when a subscription is paused by the customer.
      *
      * @return array The payload sent by Snipcart
-     *
+     * @throws WireException
      */
     public function ___handleSubscriptionPaused()
     {
@@ -654,7 +643,7 @@ class Webhooks extends WireData
      * This event is triggered when a subscription is resumed by the customer.
      *
      * @return array The payload sent by Snipcart
-     *
+     * @throws WireException
      */
     public function ___handleSubscriptionResumed()
     {
@@ -672,7 +661,7 @@ class Webhooks extends WireData
      * This event will not trigger when a subscription is created, it will only trigger for upcoming invoices.
      *
      * @return array The payload sent by Snipcart
-     *
+     * @throws WireException
      */
     public function ___handleSubscriptionInvoiceCreated()
     {
@@ -689,7 +678,7 @@ class Webhooks extends WireData
      * Snipcart expects to receive a JSON object containing an array of shipping rates.
      *
      * @return array The payload sent by Snipcart
-     *
+     * @throws WireException
      */
     public function ___handleShippingratesFetch()
     {
@@ -711,7 +700,7 @@ class Webhooks extends WireData
      * Snipcart expects to receive a JSON object containing an array of tax rates.
      *
      * @return array The payload sent by Snipcart
-     *
+     * @throws WireException
      */
     public function ___handleTaxesCalculate()
     {
@@ -722,7 +711,7 @@ class Webhooks extends WireData
             '[DEBUG] Webhooks request: handleTaxesCalculate'
         );
 
-        // No taxes handling if taxes provider is other then "integrated"
+        // No taxes handling if taxes provider is other than "integrated"
         if ($this->snipwireConfig->taxes_provider != 'integrated') {
             $log->save(
                 self::snipWireWebhooksLogName,
@@ -764,16 +753,16 @@ class Webhooks extends WireData
             $taxNamePrefix .= ' ';
 
             // Collect and group all tax names and total prices (before taxes) from items in payload
-            $itemTaxes = array();
+            $itemTaxes = [];
             foreach ($items as $item) {
                 if (!$item['taxable']) continue;
                 $taxName = $item['taxes'][0]; // we currently only support a single tax per product!
                 if (!isset($itemTaxes[$taxName])) {
                     // add new array entry
-                    $itemTaxes[$taxName] = array(
+                    $itemTaxes[$taxName] = [
                         'sumPrices' => $item['totalPriceWithoutTaxes'],
                         'splitRatio' => 0, // is calculated later
-                    );
+                    ];
                 } else {
                     // add price to existing sumPrices
                     $itemTaxes[$taxName]['sumPrices'] += $item['totalPriceWithoutTaxes'];
@@ -783,22 +772,23 @@ class Webhooks extends WireData
             // Calculate and add proportional ratio (for splittet shipping tax calculation)
             foreach ($itemTaxes as $name => $values) {
                 $itemTaxes[$name]['splitRatio'] = round(($values['sumPrices'] / $itemsTotal), 2); // e.g. 0.35 = 35%
+                // @todo: what if $itemsTotal = 0? (division by 0 error!)
             }
             unset($name, $values);
 
             /*
             Results in $itemTaxes (sample) array:
             
-            array(
-                '20% VAT' => array(
+        [
+            '20% VAT' => [
                     "sumPrices' => 300
                     'splitRatio' => 0.67
-                )
-                '10% VAT' => array(
+            ]
+            '10% VAT' => [
                     'sumPrices' => 150
                     'splitRatio' => 0.33
-                )
-            )
+            ]
+        ]
             
             Sample splitRatio calculation: 300 / (300 + 150) = 0.67 = 67%
             */
@@ -807,23 +797,23 @@ class Webhooks extends WireData
             // Prepare item & shipping taxes response
             //
 
-            $taxesResponse = array();
-            $taxConfigMax = array();
+            $taxesResponse = [];
+            $taxConfigMax = [];
             $maxRate = 0;
 
             foreach ($itemTaxes as $name => $values) {
                 $taxConfig = Taxes::getTaxesConfig(false, Taxes::taxesTypeProducts, $name);
                 if (!empty($taxConfig)) {
-                    $taxesResponse[] = array(
+                    $taxesResponse[] = [
                         'name' => $taxNamePrefix . $name,
                         'amount' => Taxes::calculateTax($values['sumPrices'], $taxConfig['rate'], $hasTaxesIncluded, $currencyPrecision),
                         'rate' => $taxConfig['rate'],
                         'numberForInvoice' => $taxConfig['numberForInvoice'],
                         'includedInPrice' => $hasTaxesIncluded,
                         //'appliesOnShipping' // not needed,
-                    );
+                    ];
 
-                    // Get tax config with highest rate (for shipping tax calculation)
+                    // Get tax config with the highest rate (for shipping tax calculation)
                     if ($shippingTaxesType == Taxes::shippingTaxesHighestRate) {
                         if ($taxConfig['rate'] > $maxRate) {
                             $maxRate = $taxConfig['rate'];
@@ -847,27 +837,27 @@ class Webhooks extends WireData
                         case Taxes::shippingTaxesFixedRate:
                             $taxConfig = Taxes::getFirstTax(false, Taxes::taxesTypeShipping);
                             if (!empty($taxConfig)) {
-                                $taxesResponse[] = array(
+                                $taxesResponse[] = [
                                     'name' => $taxNamePrefix . $taxConfig['name'] . $shippingMethod,
                                     'amount' => Taxes::calculateTax($shippingFees, $taxConfig['rate'], $hasTaxesIncluded, $currencyPrecision),
                                     'rate' => $taxConfig['rate'],
                                     'numberForInvoice' => $taxConfig['numberForInvoice'],
                                     'includedInPrice' => $hasTaxesIncluded,
                                     //'appliesOnShipping' // not needed,
-                                );
+                                ];
                             }
                             break;
 
                         case Taxes::shippingTaxesHighestRate:
                             if (!empty($taxConfigMax)) {
-                                $taxesResponse[] = array(
+                                $taxesResponse[] = [
                                     'name' => $taxNamePrefix . $taxConfigMax['name'] . $shippingMethod,
                                     'amount' => Taxes::calculateTax($shippingFees, $taxConfigMax['rate'], $hasTaxesIncluded, $currencyPrecision),
                                     'rate' => $taxConfigMax['rate'],
                                     'numberForInvoice' => $taxConfigMax['numberForInvoice'],
                                     'includedInPrice' => $hasTaxesIncluded,
                                     //'appliesOnShipping' // not needed,
-                                );
+                                ];
                             }
                             break;
 
@@ -876,14 +866,14 @@ class Webhooks extends WireData
                                 $shippingFeesSplit = round(($shippingFees * $values['splitRatio']), 2);
                                 $taxConfig = Taxes::getTaxesConfig(false, Taxes::taxesTypeProducts, $name);
                                 if (!empty($taxConfig)) {
-                                    $taxesResponse[] = array(
+                                    $taxesResponse[] = [
                                         'name' => $taxNamePrefix . $taxConfig['name'] . $shippingMethod,
                                         'amount' => Taxes::calculateTax($shippingFeesSplit, $taxConfig['rate'], $hasTaxesIncluded, $currencyPrecision),
                                         'rate' => $taxConfig['rate'],
                                         'numberForInvoice' => $taxConfig['numberForInvoice'],
                                         'includedInPrice' => $hasTaxesIncluded,
                                         //'appliesOnShipping' // not needed,
-                                    );
+                                    ];
                                 }
                             }
                             break;
@@ -892,7 +882,7 @@ class Webhooks extends WireData
             }
         }
 
-        $taxes = array('taxes' => $taxesResponse);
+        $taxes = ['taxes' => $taxesResponse];
 
         $this->responseStatus = 202; // Accepted
         $this->responseBody = \ProcessWire\wireEncodeJSON($taxes, true);
@@ -906,7 +896,7 @@ class Webhooks extends WireData
      * (This is an undocumented event!)
      *
      * @return array The payload sent by Snipcart
-     *
+     * @throws WireException
      */
     public function ___handleCustomerUpdated()
     {
