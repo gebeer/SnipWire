@@ -295,6 +295,7 @@ class MarkupSnipWire extends WireData implements Module
      *  - `attr` (array): Any additional tag attributes to add, as attr => value (default: 'title' => 'Add to cart').
      *  - `label` (string): The button or link label (default='Add to cart').
      *  - `type` (integer): The anchor type - can be button or link [default=self::snicpartAnchorTypeButton]
+     *  - `url` (string): product url (default=$product->url)
      * @return string $out The HTML for a Snipcart buy button or link (HTML button | a tag)
      *
      * @see: https://docs.snipcart.com/v3/setup/products
@@ -393,14 +394,14 @@ class MarkupSnipWire extends WireData implements Module
                 $out .= ' ' . $attr . '="' . $value . '"';
             }
         }
-
         // Required Snipcart data-item-* properties
         // ========================================
 
         $out .= ' data-item-name="' . $this->getProductName($product) . '"';
         $out .= ' data-item-id="' . $product->snipcart_item_id . '"';
         $out .= ' data-item-price="' . htmlspecialchars($this->getProductPrice($product), ENT_QUOTES, 'UTF-8') . '"';
-        $out .= ' data-item-url="' . $this->getProductUrl($product) . '"';
+        $url = isset($options['url']) ? $options['url'] : $this->getProductUrl($product);
+        $out .= ' data-item-url="' . $url . '"';
 
         if ($product->snipcart_item_short_description) {
             // restrict max length of description to avoid paypal error: https://support.snipcart.com/t/fixed-preparing-paypal-payment-fails-with-error-a-problem-occured-when-performing-an-operation-in-paypal/476
@@ -573,11 +574,8 @@ class MarkupSnipWire extends WireData implements Module
         if ($snipwireConfig->single_page_shop) {
             $productUrl = $this->wire('pages')->get($snipwireConfig->single_page_shop_page)->httpUrl;
         } elseif ($this->isVariationTemplate($product)) {
-            // build url from product that this is a variation of and variation page id
-            $prod = $product->getForPage(); // gets the product page that variation lives on
-            if ($prod && $prod->id) {
-                $productUrl = $prod->httpUrl;
-            }
+            // build url from product that this is a variation of and query param variation=variation page id
+            $productUrl = $product->getVariationHttpUrl();
         } else {
             $productUrl = $product->httpUrl;
         }
