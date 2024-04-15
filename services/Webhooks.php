@@ -476,22 +476,6 @@ class Webhooks extends WireData
         $this->{$methodName}();
     }
 
-    /**
-     * handler for all inactive webhooks
-     * @param string $eventName name of the webhook event
-     * @return string empty string for response body
-     */
-    private function handleInactiveWebhook($eventName)
-    {
-        if ($this->debug) $this->wire('log')->save(
-            self::snipWireWebhooksLogName,
-            '[DEBUG] Request for inactive Webhook: ' . $eventName
-        );
-        $this->responseStatus = 202; // Accepted
-        $this->responseBody = \ProcessWire\wireEncodeJSON($this->payload, true);
-        return '';
-    }
-
     //
     // Hookable event handler methods
     //
@@ -506,10 +490,10 @@ class Webhooks extends WireData
      */
     public function ___handleOrderCompleted()
     {
-        // if ($this->debug) $this->wire('log')->save(
-        //     self::snipWireWebhooksLogName,
-        //     '[DEBUG] Webhooks request: handleOrderCompleted'
-        // );
+        if ($this->debug) $this->wire('log')->save(
+            self::snipWireWebhooksLogName,
+            '[DEBUG] Webhooks request: handleOrderCompleted'
+        );
         $this->responseStatus = 202; // Accepted
         return $this->payload;
     }
