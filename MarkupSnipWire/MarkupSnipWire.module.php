@@ -641,7 +641,7 @@ class MarkupSnipWire extends WireData implements Module
         //     'numberFormat' => '%s%v',
         //     'currencySymbol' => '€',
         // )
-        // @todo make sure $currencySelected is not null when price is 0 
+        // @todo make sure $currencySelected is not null when price is 0
         // Get currency from method param or $snipwire->currency
         if (!$currencySelected) $currencySelected = $this->currency;
 
