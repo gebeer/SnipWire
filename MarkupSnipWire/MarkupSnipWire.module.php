@@ -2,6 +2,7 @@
 
 namespace ProcessWire;
 
+
 /**
  * MarkupSnipWire - Snipcart markup output for SnipWire. 
  * (This module is part of the SnipWire package)
