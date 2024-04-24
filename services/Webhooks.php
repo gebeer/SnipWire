@@ -224,6 +224,20 @@ class Webhooks extends WireData
     }
 
     /**
+     * Setter for responseStatus.
+     *
+     * @param int $responseStatus
+     * @return void
+     *
+     */
+    public function setResponseStatus(int $responseStatus)
+    {
+        $this->responseStatus = $responseStatus;
+    }
+
+
+
+    /**
      * Getter for responseBody.
      *
      * @return string The current response body (JSON formatted)
@@ -232,6 +246,18 @@ class Webhooks extends WireData
     public function getResponseBody()
     {
         return $this->responseBody;
+    }
+
+    /**
+     * Setter for responseBody.
+     *
+     * @param string $responseBody
+     * @return void
+     *
+     */
+    public function setResponseBody(string $responseBody)
+    {
+        $this->responseBody = $responseBody;
     }
 
 
