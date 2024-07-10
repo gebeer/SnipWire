@@ -463,14 +463,14 @@ class MarkupSnipWire extends WireData implements Module
             $out .= ' data-item-quantity-step="' . $product->snipcart_item_quantity_step . '"';
         }
 
-        if ($product->hasField('snipcart_item_stackable')) {
+        if (!is_null($product->snipcart_item_stackable)) {  
             $stackable = $product->snipcart_item_stackable ? 'true' : 'false';
         } else {
             $stackable = 'true';
         }
         $out .= ' data-item-stackable="' . $stackable . '"';
 
-        if ($product->hasField('snipcart_item_taxable')) {
+        if (!is_null($product->snipcart_item_taxable)) {
             $taxable = $product->snipcart_item_taxable ? 'true' : 'false';
         } else {
             $taxable = 'true';
