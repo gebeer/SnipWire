@@ -60,6 +60,7 @@ class Webhooks extends WireData
     const webhookOrderNotificationCreated = 'order.notification.created';
     const webhookOrderPaymentStatusChanged = 'order.paymentStatus.changed';
     const webhookOrderTrackingNumberChanged = 'order.trackingNumber.changed';
+    const webhookOrderRefundCreated = 'order.refund.created';
     const webhookSubscriptionCreated = 'subscription.created';
     const webhookSubscriptionCancelled = 'subscription.cancelled';
     const webhookSubscriptionPaused = 'subscription.paused';
@@ -115,6 +116,7 @@ class Webhooks extends WireData
             self::webhookOrderNotificationCreated => 'handleOrderNotificationCreated',
             self::webhookOrderPaymentStatusChanged => 'handleOrderPaymentStatusChanged',
             self::webhookOrderTrackingNumberChanged => 'handleOrderTrackingNumberChanged',
+            self::webhookOrderRefundCreated => 'handleOrderRefundCreated',
             self::webhookSubscriptionCreated => 'handleSubscriptionCreated',
             self::webhookSubscriptionCancelled => 'handleSubscriptionCancelled',
             self::webhookSubscriptionPaused => 'handleSubscriptionPaused',
@@ -592,6 +594,24 @@ class Webhooks extends WireData
         if ($this->debug) $this->wire('log')->save(
             self::snipWireWebhooksLogName,
             '[DEBUG] Webhooks request: handleOrderTrackingNumberChanged'
+        );
+        $this->responseStatus = 202; // Accepted
+        return $this->payload;
+    }
+
+    /**
+     * Webhook handler for refund created.
+     * This event is triggered when a refund for an order is created from the dashboard or the API. * 
+     * The event will contain the order token, amount and currency
+     *
+     * @return array The payload sent by Snipcart
+     * @throws WireException
+     */
+    public function ___handleOrderRefundCreated()
+    {
+        if ($this->debug) $this->wire('log')->save(
+            self::snipWireWebhooksLogName,
+            '[DEBUG] Webhooks request: handleOrderRefundCreated'
         );
         $this->responseStatus = 202; // Accepted
         return $this->payload;
